@@ -10,7 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -32,8 +32,7 @@ type response struct {
 }
 
 var (
-	mu          sync.Mutex
-	workNum     int
+	workNum     uint32
 	MAX_REQUEST int
 	LISTEN_PORT string
 	REQ_TIMEOUT time.Duration
@@ -67,7 +66,7 @@ func init() {
 
 	workChan = make(chan reqStruct, MAX_REQUEST)
 	respChan = make(chan resStruct, MAX_REQUEST)
-	workNum = MAX_REQUEST
+	atomic.AddUint32(&workNum, uint32(MAX_REQUEST))
 
 	for i := 0; i < MAX_REQUEST; i++ {
 		go work(i)
@@ -85,7 +84,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	var res = response{http.StatusOK, "", []byte("")}
 	// check workNum
 	fmt.Printf("NOTICE: NUM(%d) \n", workNum)
-	if workNum <= 0 {
+	if atomic.LoadUint32(&workNum) <= 0 {
 		res.Status = http.StatusLocked
 		res.Message = "Server is buzy!!!"
 		fmt.Printf("RUNTIME ERROR: server buzy max(%d) \n", MAX_REQUEST)
@@ -193,11 +192,10 @@ func doRequest(id int, p reqStruct) {
 }
 
 func doLock(action string) {
-	mu.Lock()
-	defer mu.Unlock()
 	if action == "cut" {
-		workNum -= 1
+		delta := int32(-1)
+		atomic.AddUint32(&workNum, uint32(delta))
 	} else {
-		workNum += 1
+		atomic.AddUint32(&workNum, uint32(1))
 	}
 }
